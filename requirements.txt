@@ -1,6 +1,10 @@
-flask
 supabase
+requests
 numpy
 scipy
+pydub
+opencv-python
+matplotlib
 librosa
 soundfile
+python-dotenv
