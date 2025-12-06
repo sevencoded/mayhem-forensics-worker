@@ -1,0 +1,6 @@
+flask
+supabase
+numpy
+scipy
+librosa
+soundfile
