@@ -1,4 +1,6 @@
 import os
+os.environ["MPLCONFIGDIR"] = "/tmp/matplotlib"   # Render fix za Matplotlib
+
 import asyncio
 import tempfile
 import subprocess
@@ -12,6 +14,8 @@ from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
 from utils import save_spectrogram_png
 
+
+# ENV
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
@@ -25,7 +29,7 @@ def convert_to_wav(in_path):
     cmd = [
         "ffmpeg", "-y",
         "-i", in_path,
-        "-t", "12",       # samo prvih 12 sekundi !
+        "-t", "12",
         "-vn",
         "-ac", "1",
         "-ar", "16000",
@@ -47,6 +51,7 @@ async def process_job(job):
 
     print("🔵 Processing:", proof_id)
 
+    # DOWNLOAD VIDEO
     try:
         data = supabase.storage.from_(MAIN_BUCKET).download(video_path)
     except Exception as e:
@@ -57,6 +62,7 @@ async def process_job(job):
     tmp_mp4.write(data)
     tmp_mp4.close()
 
+    # WAV
     wav_path = convert_to_wav(tmp_mp4.name)
     if wav_path is None:
         print("❌ wav conversion failed")
@@ -68,10 +74,12 @@ async def process_job(job):
         print("❌ load wav failed:", e)
         return
 
+    # FEATURES
     enf_hash, enf_conf, spect = extract_enf(audio, sr)
     audio_fp = extract_audio_fingerprint(audio, sr)
     phash = extract_video_phash(tmp_mp4.name)
 
+    # SPECTROGRAM
     spect_name = None
     if spect is not None:
         spect_name = f"{user_id}_{proof_id}_enf.png"
@@ -86,6 +94,7 @@ async def process_job(job):
         except:
             pass
 
+    # SAVE RESULT
     supabase.table("forensic_results").insert({
         "proof_id": proof_id,
         "enf_hash": enf_hash,
@@ -97,6 +106,7 @@ async def process_job(job):
 
     supabase.table("forensic_queue").update({"status": "done"}).eq("id", job["id"]).execute()
 
+    # DELETE TEMP FILES
     os.remove(tmp_mp4.name)
     if os.path.exists(wav_path):
         os.remove(wav_path)
@@ -109,11 +119,23 @@ async def process_job(job):
 async def loop():
     print("🚀 Worker online.")
     while True:
-        jobs = supabase.table("forensic_queue").select("*").eq("status", "pending").execute().data
+        try:
+            jobs = supabase.table("forensic_queue").select("*").eq("status", "pending").execute().data
+        except Exception as e:
+            print("❌ queue select error:", e)
+            await asyncio.sleep(5)
+            continue
+
+        if not jobs:
+            print("⏳ No jobs...")
+        else:
+            print(f"📌 Found {len(jobs)} job(s).")
+
         for j in jobs:
             await process_job(j)
+
         await asyncio.sleep(5)
 
 
-if __name__ == "__main__":
-    asyncio.run(loop())
+# RENDER FIX — uvek pokreni loop, bez __main__
+asyncio.run(loop())
