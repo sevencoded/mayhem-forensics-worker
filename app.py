@@ -29,7 +29,7 @@ def convert_to_wav(in_path):
     cmd = [
         "ffmpeg", "-y",
         "-i", in_path,
-        "-t", "12",
+        "-t", "5",
         "-vn",
         "-ac", "1",
         "-ar", "16000",
