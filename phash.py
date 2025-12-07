@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from .utils import sha256_bytes
+from utils import sha256_bytes
 
 def extract_video_phash(video_path):
     cap = cv2.VideoCapture(video_path)
