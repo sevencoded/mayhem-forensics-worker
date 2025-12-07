@@ -1,9 +1,11 @@
 services:
   - name: mayhem-forensics-worker
     type: worker
-    env: python
+    runtime: python
     buildCommand: "./render-build.sh"
     startCommand: "python app.py"
+    packages:
+      - ffmpeg
     envVars:
       - key: SUPABASE_URL
         sync: false
