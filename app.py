@@ -1,46 +1,38 @@
 import os
+import subprocess
 import asyncio
 import tempfile
-import ffmpeg
 from supabase import create_client
 import soundfile as sf
-import numpy as np
 
-# Lokalni moduli
 from enf import extract_enf
 from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
 from utils import save_spectrogram_png
 
-# ENV promenljive
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MAIN_BUCKET = "main_videos"
+async def extract_audio_wav(input_video):
+    """Extract audio track from MP4 using ffmpeg → WAV file"""
+    wav_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
 
+    cmd = [
+        "ffmpeg",
+        "-i", input_video,
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-f", "wav",
+        wav_path
+    ]
 
-# -----------------------------------------
-# AUDIO EXTRACTION (FFMPEG)
-# -----------------------------------------
-def extract_audio_from_mp4(video_path):
-    audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    (
-        ffmpeg
-        .input(video_path)
-        .output(audio_path, format='wav', ac=1, ar=44100)  # mono, 44.1 kHz
-        .overwrite_output()
-        .run(quiet=True)
-    )
+    return wav_path
 
-    return audio_path
-
-
-# -----------------------------------------
-# PROCESS JOB
-# -----------------------------------------
 async def process_job(job):
     proof_id = job["proof_id"]
     video_path = job["video_path"]
@@ -48,74 +40,63 @@ async def process_job(job):
 
     print("🔵 Processing", proof_id)
 
-    # 1) Download video file
-    resp = supabase.storage.from_(MAIN_BUCKET).download(video_path)
-    if resp is None:
-        print("❌ ERROR: Could not download video:", video_path)
-        return
+    # DOWNLOAD VIDEO
+    bucket = "main_videos"
+    video_bytes = supabase.storage.from_(bucket).download(video_path)
 
-    # Save video to temp file
-    tmp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    tmp_video.write(resp)
-    tmp_video.close()
-    video_file = tmp_video.name
+    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    temp_video.write(video_bytes)
+    temp_video.close()
+    video_file = temp_video.name
 
-    # 2) Extract WAV audio from MP4
-    audio_file = extract_audio_from_mp4(video_file)
+    # 🔥 1) Extract audio properly (fix)
+    wav_file = await extract_audio_wav(video_file)
 
-    # 3) Load extracted WAV
-    audio, sr = sf.read(audio_file)
+    # Read WAV now (soundfile works)
+    audio, sr = sf.read(wav_file)
 
-    # ---------- ENF ----------
+    # ===== ENF =====
     enf_hash, enf_conf, spect = extract_enf(audio, sr)
 
-    spect_file = None
     if spect is not None:
-        spect_file = f"{user_id}_{proof_id}_enf.png"
-        save_spectrogram_png(spect, spect_file)
-
-        supabase.storage.from_(MAIN_BUCKET).upload(
-            f"enf/{spect_file}",
-            open(spect_file, "rb"),
+        png_name = f"{user_id}_{proof_id}_enf.png"
+        save_spectrogram_png(spect, png_name)
+        supabase.storage.from_(bucket).upload(
+            f"enf/{png_name}",
+            open(png_name, "rb"),
             {"content-type": "image/png"}
         )
 
-    # ---------- AUDIO FINGERPRINT ----------
+    # ===== AUDIO FINGERPRINT =====
     audio_fp = extract_audio_fingerprint(audio, sr)
 
-    # ---------- VIDEO PHASH ----------
-    phash = extract_video_phash(video_file)
+    # ===== VIDEO PHASH =====
+    video_phash = extract_video_phash(video_file)
 
-    # ---------- Insert forensic results ----------
     supabase.table("forensic_results").insert({
         "proof_id": proof_id,
         "enf_hash": enf_hash,
         "audio_fingerprint": audio_fp,
-        "video_phash": phash,
+        "video_phash": video_phash,
         "metadata_hash": None,
-        "chain_hash": None
+        "chain_hash": None,
     }).execute()
 
-    # Mark job done
-    supabase.table("forensic_queue").update({"status": "done"}).eq("id", job["id"]).execute()
-
-    # Remove original uploaded video
-    supabase.storage.from_(MAIN_BUCKET).remove([video_path])
+    supabase.table("forensic_queue").update(
+        {"status": "done"}
+    ).eq("id", job["id"]).execute()
 
     print("✔ Done", proof_id)
 
 
-# -----------------------------------------
-# MAIN LOOP
-# -----------------------------------------
 async def loop():
     while True:
         jobs = supabase.table("forensic_queue").select("*").eq("status", "pending").execute().data
+
         for job in jobs:
             await process_job(job)
 
-        await asyncio.sleep(10)
-
+        await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(loop())
