@@ -14,7 +14,7 @@ def download_file(path):
 def upload_file(path, bytes_data, content_type):
     supabase.storage.from_("main_videos").upload(path, bytes_data, {
         "contentType": content_type,
-        "upsert": True
+        "upsert": "true"
     })
 
 def delete_file(path):
