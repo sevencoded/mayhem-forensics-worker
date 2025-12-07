@@ -2,10 +2,9 @@ supabase
 requests
 numpy
 scipy
-pydub
-opencv-python
-matplotlib
 librosa
 soundfile
-python-dotenv
+opencv-python
+matplotlib
 ffmpeg-python
+python-dotenv
