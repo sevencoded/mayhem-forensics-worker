@@ -6,10 +6,11 @@ import requests
 import soundfile as sf
 import numpy as np
 
-from processing.enf import extract_enf
-from processing.audio_fp import extract_audio_fingerprint
-from processing.phash import extract_video_phash
-from processing.utils import save_spectrogram_png
+# FIX IMPORTA — sada su u root folderu
+from enf import extract_enf
+from audio_fp import extract_audio_fingerprint
+from phash import extract_video_phash
+from utils import save_spectrogram_png
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
