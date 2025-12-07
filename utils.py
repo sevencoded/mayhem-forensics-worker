@@ -1,16 +1,16 @@
-import numpy as np
-import io
-from PIL import Image
+import hashlib
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 def save_spectrogram_png(S, out_path):
-    plt.figure(figsize=(10, 4))
-    plt.imshow(S, aspect='auto', origin='lower')
+    plt.figure(figsize=(8, 3))
+    plt.imshow(S, aspect='auto', origin='lower', cmap='inferno')
     plt.colorbar()
     plt.tight_layout()
-    plt.savefig(out_path, dpi=140)
+    plt.savefig(out_path, dpi=120)
     plt.close()
 
+
 def sha256_bytes(data: bytes):
-    import hashlib
     return hashlib.sha256(data).hexdigest()
