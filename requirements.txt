@@ -8,3 +8,4 @@ matplotlib
 librosa
 soundfile
 python-dotenv
+ffmpeg-python
