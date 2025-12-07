@@ -1,7 +1,7 @@
 import numpy as np
 import librosa
 from scipy.signal import correlate
-from .utils import save_spectrogram_png
+from utils import save_spectrogram_png
 
 def extract_enf(audio_data, sample_rate):
     # Downsample (ENF is < 200 Hz)
