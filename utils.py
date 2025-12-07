@@ -1,13 +1,21 @@
-import hashlib
-import matplotlib.pyplot as plt
+import os
+import tempfile
+from supabase import create_client
 
-def sha256_bytes(data: bytes):
-    return hashlib.sha256(data).hexdigest()
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
-def save_spectrogram_png(S, out_path):
-    plt.figure(figsize=(8, 3))
-    plt.imshow(S, aspect='auto', origin='lower', cmap='inferno')
-    plt.colorbar()
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=120)
-    plt.close()
+def download_file(path):
+    res = supabase.storage.from_("main_videos").download(path)
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".video")
+    temp.write(res)
+    temp.close()
+    return temp.name
+
+def upload_file(path, bytes_data, content_type):
+    supabase.storage.from_("main_videos").upload(path, bytes_data, {
+        "contentType": content_type,
+        "upsert": True
+    })
+
+def delete_file(path):
+    supabase.storage.from_("main_videos").remove([path])
