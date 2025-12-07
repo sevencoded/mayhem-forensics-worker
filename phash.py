@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 from utils import sha256_bytes
 
-
 def extract_video_phash(video_path):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -16,8 +15,7 @@ def extract_video_phash(video_path):
         if not ok:
             break
 
-        # Skip frames for speed (take 1 every 15)
-        if frame_id % 15 != 0:
+        if frame_id % 20 != 0:
             frame_id += 1
             continue
 
@@ -25,11 +23,11 @@ def extract_video_phash(video_path):
         small = cv2.resize(gray, (32, 32))
 
         dct = cv2.dct(np.float32(small))
-        block = dct[:8, :8]  # low frequencies only
+        block = dct[:8, :8]
 
-        hash_val = sha256_bytes(block.flatten().astype(np.float32).tobytes())
-        hashes.append(hash_val)
-
+        hashes.append(
+            sha256_bytes(block.flatten().astype(np.float32).tobytes())
+        )
         frame_id += 1
 
     cap.release()
@@ -37,6 +35,4 @@ def extract_video_phash(video_path):
     if len(hashes) == 0:
         return None
 
-    # Combine all hashes → global video fingerprint
-    joined = "|".join(hashes).encode()
-    return sha256_bytes(joined)
+    return sha256_bytes("|".join(hashes).encode())
