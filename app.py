@@ -11,10 +11,6 @@ from audio_fp import generate_audio_fingerprint
 from phash import generate_video_phash
 from utils import upload_file
 
-# -------------------------------------------------------
-# INIT
-# -------------------------------------------------------
-
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -24,37 +20,32 @@ app = Flask(__name__)
 MAX_RETRIES = 3
 
 
-# -------------------------------------------------------
-# Helper: process video file
-# -------------------------------------------------------
-
 def process_video(local_path, user_id, name, sha256):
     """
-    Returns dict of forensic data.
+    Radi celu forenzičku obradu i upis u bazu.
+    Vraća dict sa proof_id i hash-evima.
     """
-
-    # === FORENSIC PROCESSING ===
+    # --- FORENZIČKA OBRADA ---
     enf_hash, enf_image_bytes = generate_enf_hash_and_image(local_path)
     audio_fp = generate_audio_fingerprint(local_path)
     video_phash = generate_video_phash(local_path)
 
-    # === UPLOAD ENF PNG ===
+    # --- ENF PNG U STORAGE ---
     proof_id = str(uuid.uuid4())
     enf_filename = f"{user_id}_{proof_id}_enf.png"
-
     upload_file(f"enf/{enf_filename}", enf_image_bytes, "image/png")
 
-    # === INSERT PROOF ===
-    proof_insert = supabase.table("proofs").insert({
+    # --- PROOF ZAPIS ---
+    supabase.table("proofs").insert({
         "id": proof_id,
         "user_id": user_id,
         "name": name,
         "hash": sha256,
         "signature": str(uuid.uuid4()),
-        "witness_path": None   # intro mozemo dodati kasnije
+        # nema witness_path više
     }).execute()
 
-    # === INSERT FORENSIC RESULTS ===
+    # --- FORENSIC RESULTS ---
     supabase.table("forensic_results").insert({
         "proof_id": proof_id,
         "enf_hash": enf_hash,
@@ -72,10 +63,6 @@ def process_video(local_path, user_id, name, sha256):
     }
 
 
-# -------------------------------------------------------
-# /upload endpoint — PRIMA VIDEO DIREKTNO IZ FLUTTERA
-# -------------------------------------------------------
-
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
@@ -90,14 +77,13 @@ def upload():
         if not file:
             return jsonify({"error": "Missing video file"}), 400
 
-        # TEMP SAVE VIDEO
+        # TEMP snimanje videa
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         tmp.write(file.read())
         tmp.close()
-
         local_path = tmp.name
 
-        # RETRY LOGIC
+        # RETRY LOGIKA
         for attempt in range(MAX_RETRIES):
             try:
                 result = process_video(local_path, user_id, name, sha256)
@@ -107,13 +93,12 @@ def upload():
                     "proof_id": result["proof_id"],
                     "forensic": result
                 }), 200
-
             except Exception as e:
-                print(f"Processing failed attempt {attempt+1}: {e}")
+                print(f"Processing failed attempt {attempt + 1}: {e}")
                 traceback.print_exc()
                 time.sleep(1)
 
-        # FINAL FAIL
+        # totalni fail
         os.remove(local_path)
         return jsonify({"ok": False, "status": "failed"}), 500
 
@@ -121,10 +106,6 @@ def upload():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-# -------------------------------------------------------
-# START
-# -------------------------------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
