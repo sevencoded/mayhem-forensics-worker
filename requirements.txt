@@ -9,3 +9,4 @@ matplotlib
 ffmpeg-python
 python-dotenv
 imagehash
+flask
