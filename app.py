@@ -1,17 +1,19 @@
 import os
 import base64
 from flask import Flask, request, jsonify
-from supabase import create_client, Client
+from supabase import create_client
 import uuid
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = Flask(__name__)
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
 @app.route("/upload", methods=["POST"])
-def upload_video():
+def upload():
     try:
         user_id = request.form.get("user_id")
         name = request.form.get("name")
@@ -20,12 +22,12 @@ def upload_video():
         file = request.files["file"]
         slice_bytes = file.read()
 
-        # encode slice to base64
+        # encode slice → store minimal data
         b64_slice = base64.b64encode(slice_bytes).decode()
 
         proof_id = str(uuid.uuid4())
 
-        # insert new proof
+        # Create proof
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -34,15 +36,15 @@ def upload_video():
             "name": name,
         }).execute()
 
-        # insert job with BASE64 slice data
+        # Insert queue job
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_path": b64_slice,  # now video data is here
+            "video_path": b64_slice,
             "status": "pending",
         }).execute()
 
-        return jsonify({"success": True, "proof_id": proof_id})
+        return jsonify({"ok": True, "proof_id": proof_id})
 
     except Exception as e:
         print("UPLOAD ERROR:", e)
