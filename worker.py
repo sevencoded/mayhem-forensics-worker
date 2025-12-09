@@ -9,18 +9,15 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
 def upload_enf_png(user_id, proof_id, png_bytes):
-    # svaki user ima svoj folder
     path = f"{user_id}/{proof_id}_enf.png"
 
     supabase.storage.from_("main_videos").upload(
-        path=path,
-        file=png_bytes,
-        file_options={"content-type": "image/png"}
+        path,
+        png_bytes,
+        {"content-type": "image/png"}
     )
     return path
-
 
 while True:
     try:
@@ -41,6 +38,13 @@ while True:
         user_id = task["user_id"]
         video_path = task["video_path"]
 
+        # Safety check
+        if not os.path.exists(video_path):
+            supabase.table("forensic_queue").update(
+                {"status": "error_missing_file"}
+            ).eq("id", task["id"]).execute()
+            continue
+
         supabase.table("forensic_queue").update({"status": "processing"}).eq("id", task["id"]).execute()
 
         print("Processing:", video_path)
@@ -58,7 +62,6 @@ while True:
             "video_phash": video_phash
         }).execute()
 
-        # Delete local slice
         if os.path.exists(video_path):
             os.remove(video_path)
 
