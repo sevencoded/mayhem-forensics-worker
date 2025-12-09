@@ -7,11 +7,11 @@ from phash import extract_video_phash
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_enf_png(user_id, proof_id, png_bytes):
     path = f"{user_id}/{proof_id}_enf.png"
-
     supabase.storage.from_("main_videos").upload(
         path,
         png_bytes,
@@ -30,7 +30,7 @@ while True:
         )
 
         if not task.data:
-            time.sleep(3)
+            time.sleep(2)
             continue
 
         task = task.data[0]
@@ -38,23 +38,26 @@ while True:
         user_id = task["user_id"]
         video_path = task["video_path"]
 
-        # Safety check
+        # Shared disk — now file is ALWAYS accessible
         if not os.path.exists(video_path):
+            print("❌ File missing:", video_path)
             supabase.table("forensic_queue").update(
                 {"status": "error_missing_file"}
             ).eq("id", task["id"]).execute()
             continue
 
+        print("Processing:", video_path)
         supabase.table("forensic_queue").update({"status": "processing"}).eq("id", task["id"]).execute()
 
-        print("Processing:", video_path)
-
+        # Forensic analysis
         enf_hash, enf_png = extract_enf(video_path)
         audio_fp = extract_audio_fingerprint(video_path)
         video_phash = extract_video_phash(video_path)
 
+        # Upload ENF plot PNG
         enf_path = upload_enf_png(user_id, proof_id, enf_png)
 
+        # Store results
         supabase.table("forensic_results").insert({
             "proof_id": proof_id,
             "enf_hash": enf_hash,
@@ -62,14 +65,17 @@ while True:
             "video_phash": video_phash
         }).execute()
 
+        # Delete temp slice
         if os.path.exists(video_path):
             os.remove(video_path)
 
-        supabase.table("forensic_queue").update({"status": "done"}).eq("id", task["id"]).execute()
+        supabase.table("forensic_queue").update(
+            {"status": "done"}
+        ).eq("id", task["id"]).execute()
 
-        print("FINISHED:", proof_id, "stored:", enf_path)
+        print("✔ FINISHED:", proof_id)
 
     except Exception as e:
         print("Worker error:", e)
 
-    time.sleep(3)
+    time.sleep(2)
