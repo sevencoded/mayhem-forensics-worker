@@ -11,7 +11,9 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def upload_enf_png(user_id, proof_id, png_bytes):
+    # svaki user ima svoj folder
     path = f"{user_id}/{proof_id}_enf.png"
+
     supabase.storage.from_("main_videos").upload(
         path=path,
         file=png_bytes,
@@ -22,7 +24,7 @@ def upload_enf_png(user_id, proof_id, png_bytes):
 
 while True:
     try:
-        queue = (
+        task = (
             supabase.table("forensic_queue")
             .select("*")
             .eq("status", "pending")
@@ -30,16 +32,18 @@ while True:
             .execute()
         )
 
-        if not queue.data:
+        if not task.data:
             time.sleep(3)
             continue
 
-        task = queue.data[0]
+        task = task.data[0]
         proof_id = task["proof_id"]
         user_id = task["user_id"]
         video_path = task["video_path"]
 
         supabase.table("forensic_queue").update({"status": "processing"}).eq("id", task["id"]).execute()
+
+        print("Processing:", video_path)
 
         enf_hash, enf_png = extract_enf(video_path)
         audio_fp = extract_audio_fingerprint(video_path)
@@ -59,6 +63,8 @@ while True:
             os.remove(video_path)
 
         supabase.table("forensic_queue").update({"status": "done"}).eq("id", task["id"]).execute()
+
+        print("FINISHED:", proof_id, "stored:", enf_path)
 
     except Exception as e:
         print("Worker error:", e)
