@@ -1,61 +1,49 @@
 import os
-import uuid
-import tempfile
+import base64
 from flask import Flask, request, jsonify
-from supabase import create_client
+from supabase import create_client, Client
+import uuid
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = Flask(__name__)
 
 @app.route("/upload", methods=["POST"])
-def upload():
+def upload_video():
     try:
         user_id = request.form.get("user_id")
         name = request.form.get("name")
-        sha256 = request.form.get("sha256")
-        slice_bytes = request.form.get("slice_bytes")
+        sha256_hash = request.form.get("sha256")
 
-        file = request.files.get("file")
-        if not file:
-            return jsonify({"error": "Missing file"}), 400
+        file = request.files["file"]
+        slice_bytes = file.read()
 
-        # Save slice to temp
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        tmp.write(file.read())
-        tmp.close()
+        # encode slice to base64
+        b64_slice = base64.b64encode(slice_bytes).decode()
 
-        local_path = tmp.name
         proof_id = str(uuid.uuid4())
 
-        # Create proof entry
+        # insert new proof
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
+            "hash": sha256_hash,
+            "signature": "N/A",
             "name": name,
-            "hash": sha256,
-            "signature": str(uuid.uuid4()),
         }).execute()
 
-        # Add to queue
+        # insert job with BASE64 slice data
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_path": local_path,
+            "video_path": b64_slice,  # now video data is here
             "status": "pending",
         }).execute()
 
-        return jsonify({
-            "ok": True,
-            "queued": True,
-            "proof_id": proof_id
-        }), 200
+        return jsonify({"success": True, "proof_id": proof_id})
 
     except Exception as e:
+        print("UPLOAD ERROR:", e)
         return jsonify({"error": str(e)}), 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
