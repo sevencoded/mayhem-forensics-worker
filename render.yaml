@@ -1,7 +1,6 @@
 services:
   - name: mayhem-api
     type: web
-    runtime: python
     plan: starter
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python app.py"
@@ -13,7 +12,6 @@ services:
 
   - name: mayhem-worker
     type: worker
-    runtime: python
     plan: starter
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python worker.py"
