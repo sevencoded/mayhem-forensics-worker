@@ -1,14 +1,24 @@
 services:
-  - name: mayhem-worker
-    type: web               # mora biti WEB da prima HTTP upload
-    env: python
-    plan: starter           # moze basic/pro kasnije
-    buildCommand: "./render-build.sh"
+  - name: mayhem-api
+    type: web
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "python app.py"
     envVars:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
-      - key: PORT
-        value: "8000"       # Render automatski setuje, ali ovo je fallback
+
+  - name: mayhem-worker
+    type: worker
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python worker.py"
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
