@@ -2,7 +2,7 @@ services:
   - name: mayhem-forensics
     type: web
     env: python
-    plan: starter
+    plan: pro
 
     buildCommand: "./render-build.sh"
     startCommand: "./start.sh"
