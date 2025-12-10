@@ -1,3 +1,4 @@
+flask
 supabase
 requests
 numpy
@@ -9,4 +10,4 @@ matplotlib
 ffmpeg-python
 python-dotenv
 imagehash
-flask
+supervisor
