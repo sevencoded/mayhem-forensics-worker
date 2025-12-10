@@ -11,5 +11,5 @@ def upload_file(path: str, data: bytes, mime: str):
     supabase.storage.from_("main_videos").upload(
         path,
         data,
-        {"content-type": mime}
+        {"contentType": mime}
     )
