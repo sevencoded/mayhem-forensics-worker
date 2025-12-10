@@ -1,13 +1,16 @@
 services:
-  - name: mayhem-forensics-worker
-    type: worker
-    env: python
+  - name: mayhem-forensics
+    type: web
+    runtime: python
+    plan: starter
+
     buildCommand: "pip install -r requirements.txt"
     startCommand: "./start.sh"
-    plan: starter
+
     disk:
       name: shared-forensics
       mountPath: /data
+
     envVars:
       - key: SUPABASE_URL
         sync: false
