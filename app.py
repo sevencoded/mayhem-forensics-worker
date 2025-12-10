@@ -9,24 +9,24 @@ from enf import extract_enf
 from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
 
-# -------------------------
+# ================================================================
 # SUPABASE INIT
-# -------------------------
+# ================================================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# -------------------------
-# SHARED DISK
-# -------------------------
+# ================================================================
+# FILE STORAGE PATH
+# ================================================================
 UPLOAD_DIR = "/data/files"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
-# ===============================================================
+# ================================================================
 # API — /upload
-# ===============================================================
+# ================================================================
 @app.route("/upload", methods=["POST"])
 def upload_slice():
     try:
@@ -35,10 +35,12 @@ def upload_slice():
         sha256 = request.form.get("sha256", "")
         file = request.files["file"]
 
+        # Unique ID for the proof
         proof_id = str(uuid.uuid4())
         filepath = f"{UPLOAD_DIR}/{proof_id}.mp4"
         file.save(filepath)
 
+        # Insert proof
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -47,6 +49,7 @@ def upload_slice():
             "name": name
         }).execute()
 
+        # Add to forensic queue
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
@@ -65,15 +68,16 @@ def upload_slice():
 def health():
     return "API OK", 200
 
-# ===============================================================
-# WORKER — radi u POSEBNOM THREAD-u 
-# ===============================================================
+# ================================================================
+# WORKER THREAD
+# ================================================================
 def worker_loop():
     print("Worker thread started...")
 
     while True:
         try:
-            task = (
+            # Fetch next pending task
+            task_res = (
                 supabase.table("forensic_queue")
                 .select("*")
                 .eq("status", "pending")
@@ -81,36 +85,44 @@ def worker_loop():
                 .execute()
             )
 
-            if not task.data:
+            if not task_res.data:
                 time.sleep(2)
                 continue
 
-            task = task.data[0]
+            task = task_res.data[0]
             proof_id = task["proof_id"]
             user_id = task["user_id"]
             video_path = task["video_path"]
+            task_id = task["id"]
 
+            # Validate file
             if not os.path.exists(video_path):
                 supabase.table("forensic_queue").update(
                     {"status": "error_missing_file"}
-                ).eq("id", task["id"]).execute()
+                ).eq("id", task_id).execute()
                 continue
 
+            # Mark as processing
             supabase.table("forensic_queue").update(
                 {"status": "processing"}
-            ).eq("id", task["id"]).execute()
+            ).eq("id", task_id).execute()
 
             print("Processing:", video_path)
 
+            # Extract forensic data
             enf_hash, enf_png = extract_enf(video_path)
             audio_fp = extract_audio_fingerprint(video_path)
             video_phash = extract_video_phash(video_path)
 
+            # Upload ENF spectrogram PNG
             enf_path = f"{user_id}/{proof_id}_enf.png"
             supabase.storage.from_("main_videos").upload(
-                enf_path, enf_png, {"content-type": "image/png"}
+                enf_path,
+                enf_png,
+                file_options={"content-type": "image/png"}
             )
 
+            # Insert forensic results
             supabase.table("forensic_results").insert({
                 "proof_id": proof_id,
                 "enf_hash": enf_hash,
@@ -118,22 +130,27 @@ def worker_loop():
                 "video_phash": video_phash
             }).execute()
 
-            os.remove(video_path)
+            # Delete processed video
+            try:
+                os.remove(video_path)
+            except:
+                pass
 
+            # Mark task as done
             supabase.table("forensic_queue").update(
                 {"status": "done"}
-            ).eq("id", task["id"]).execute()
+            ).eq("id", task_id).execute()
 
             print("✔ DONE:", proof_id)
 
         except Exception as e:
             print("WORKER ERROR:", e)
 
-        time.sleep(2)
+        time.sleep(1)
 
-# ===============================================================
-# START BOTH
-# ===============================================================
+# ================================================================
+# START SERVER + WORKER
+# ================================================================
 if __name__ == "__main__":
     threading.Thread(target=worker_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=10000)
