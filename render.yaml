@@ -1,6 +1,6 @@
 services:
-  - name: mayhem-forensics
-    type: web
+  - name: mayhem-forensics-worker
+    type: worker
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "./start.sh"
