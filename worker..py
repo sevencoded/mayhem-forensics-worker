@@ -1,4 +1,3 @@
-# worker.py
 import os
 import time
 import traceback
@@ -30,21 +29,17 @@ def worker_loop():
             user_id = job["user_id"]
             file_path = job["file_path"]
 
-            # Mark job as processing
             supabase.table("forensic_queue").update({
                 "status": "processing"
             }).eq("id", qid).execute()
 
             try:
-                # Run forensic processing
                 enf_hash, enf_png = extract_enf(file_path)
                 audio_fp = extract_audio_fingerprint(file_path)
                 video_phash = extract_video_phash(file_path)
 
-                # Upload ENF result image
                 upload_file(f"{user_id}/{proof_id}_enf.png", enf_png, "image/png")
 
-                # Save results
                 supabase.table("forensic_results").insert({
                     "proof_id": proof_id,
                     "enf_hash": enf_hash,
@@ -52,9 +47,7 @@ def worker_loop():
                     "video_phash": video_phash
                 }).execute()
 
-                # Cleanup: delete slice file
-                if os.path.exists(file_path):
-                    os.remove(file_path)
+                os.remove(file_path)
 
                 supabase.table("forensic_queue").update({
                     "status": "completed"
@@ -63,7 +56,6 @@ def worker_loop():
             except Exception as e:
                 print("PROCESS ERROR:", e)
                 traceback.print_exc()
-
                 supabase.table("forensic_queue").update({
                     "status": "failed"
                 }).eq("id", qid).execute()
@@ -73,3 +65,6 @@ def worker_loop():
             traceback.print_exc()
 
         time.sleep(1)
+
+if __name__ == "__main__":
+    worker_loop()
