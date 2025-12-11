@@ -10,4 +10,5 @@ matplotlib
 ffmpeg-python
 python-dotenv
 imagehash
+pillow
 supervisor
