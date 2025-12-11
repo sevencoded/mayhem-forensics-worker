@@ -2,15 +2,12 @@ services:
   - name: mayhem-forensics
     type: web
     env: python
-    plan: pro
-
+    plan: hobby
     buildCommand: "./render-build.sh"
-    startCommand: "./start.sh"
-
+    startCommand: "python app.py"
     disk:
       name: shared-forensics
       mountPath: /data
-
     envVars:
       - key: SUPABASE_URL
         sync: false
