@@ -1,13 +1,9 @@
-# app.py
-import os
 import uuid
-import threading
+import os
 from flask import Flask, request, jsonify
-
 from utils import supabase
-from worker import worker_loop
 
-UPLOAD_DIR = "/data/uploads"
+UPLOAD_DIR = "/data/slices"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
@@ -21,12 +17,12 @@ def upload():
         file = request.files["file"]
 
         proof_id = str(uuid.uuid4())
+        file_path = f"{UPLOAD_DIR}/{proof_id}.mp4"
 
-        # Save slice on disk
-        filepath = f"{UPLOAD_DIR}/{proof_id}.mp4"
-        file.save(filepath)
+        # snimi slice na disk
+        file.save(file_path)
 
-        # Insert proof metadata
+        # upiši proof
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -35,29 +31,15 @@ def upload():
             "signature": sha256
         }).execute()
 
-        # Insert job for worker
+        # queue job
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "file_path": filepath,
+            "file_path": file_path,
             "status": "pending"
         }).execute()
 
-        return jsonify({"ok": True, "proof_id": proof_id}), 200
+        return jsonify({"ok": True, "proof_id": proof_id})
 
     except Exception as e:
-        print("UPLOAD ERROR:", e)
         return jsonify({"error": str(e)}), 500
-
-
-@app.route("/")
-def health():
-    return "SERVER OK", 200
-
-
-# LAUNCH FLASK + WORKER IN SAME SERVICE
-if __name__ == "__main__":
-    threading.Thread(target=worker_loop, daemon=True).start()
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
