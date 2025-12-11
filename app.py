@@ -27,15 +27,21 @@ def upload():
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_data": video_bytes,   # BINARY video !!!
+            "video_data": video_bytes,
             "status": "pending"
         }).execute()
 
-        return jsonify({"ok": True, "proof_id": proof_id})
+        return jsonify({"ok": True, "proof_id": proof_id}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/")
 def health():
     return "WEB OK", 200
+
+
+# ❗ Ovo je falilo — bez ovoga Render će se odmah ugasiti.
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
