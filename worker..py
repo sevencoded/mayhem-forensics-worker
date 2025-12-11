@@ -31,6 +31,11 @@ def worker_loop():
             user_id = job["user_id"]
             file_path = job["file_path"]
 
+            if not os.path.exists(file_path):
+                print("ERROR: file_path does not exist:", file_path)
+                supabase.table("forensic_queue").update({"status": "failed"}).eq("id", qid).execute()
+                continue
+
             supabase.table("forensic_queue").update({
                 "status": "processing"
             }).eq("id", qid).execute()
