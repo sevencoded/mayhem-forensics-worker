@@ -1,9 +1,8 @@
 # app_web.py
 import uuid
-import base64
 import os
 from flask import Flask, request, jsonify
-from utils import supabase
+from utils import supabase, upload_file
 
 app = Flask(__name__)
 
@@ -15,15 +14,19 @@ def upload():
         sha256 = request.form["sha256"]
         file = request.files["file"]
 
-        # Read slice bytes
-        video_bytes = file.read()
-
-        # Encode to base64 so Supabase can store it safely in JSON
-        video_b64 = base64.b64encode(video_bytes).decode("utf-8")
-
+        slice_bytes = file.read()
         proof_id = str(uuid.uuid4())
 
-        # Insert into proofs table
+        # 1️⃣ Snimi slice u Supabase Storage (više ne ide u bazu)
+        storage_path = f"{user_id}/{proof_id}_slice.mp4"
+
+        upload_file(
+            path=storage_path,
+            data=slice_bytes,
+            mime="video/mp4"
+        )
+
+        # 2️⃣ Upis u proofs
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -32,11 +35,11 @@ def upload():
             "signature": sha256
         }).execute()
 
-        # Insert into forensic queue
+        # 3️⃣ Queue job – umesto video_data sada se čuva samo path
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_data": video_b64,
+            "video_path": storage_path,
             "status": "pending"
         }).execute()
 
@@ -52,7 +55,6 @@ def health():
     return "WEB OK", 200
 
 
-# Render requires this to keep server open
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
