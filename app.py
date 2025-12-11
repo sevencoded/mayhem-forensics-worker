@@ -1,8 +1,14 @@
-# app_web.py
-import uuid
+# app.py
 import os
+import uuid
+import threading
 from flask import Flask, request, jsonify
-from utils import supabase, upload_file
+
+from utils import supabase
+from worker import worker_loop
+
+UPLOAD_DIR = "/data/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
@@ -14,19 +20,13 @@ def upload():
         sha256 = request.form["sha256"]
         file = request.files["file"]
 
-        slice_bytes = file.read()
         proof_id = str(uuid.uuid4())
 
-        # 1️⃣ Snimi slice u Supabase Storage (više ne ide u bazu)
-        storage_path = f"{user_id}/{proof_id}_slice.mp4"
+        # Save slice on disk
+        filepath = f"{UPLOAD_DIR}/{proof_id}.mp4"
+        file.save(filepath)
 
-        upload_file(
-            path=storage_path,
-            data=slice_bytes,
-            mime="video/mp4"
-        )
-
-        # 2️⃣ Upis u proofs
+        # Insert proof metadata
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -35,11 +35,11 @@ def upload():
             "signature": sha256
         }).execute()
 
-        # 3️⃣ Queue job – umesto video_data sada se čuva samo path
+        # Insert job for worker
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_path": storage_path,
+            "file_path": filepath,
             "status": "pending"
         }).execute()
 
@@ -52,9 +52,12 @@ def upload():
 
 @app.route("/")
 def health():
-    return "WEB OK", 200
+    return "SERVER OK", 200
 
 
+# LAUNCH FLASK + WORKER IN SAME SERVICE
 if __name__ == "__main__":
+    threading.Thread(target=worker_loop, daemon=True).start()
+    
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
