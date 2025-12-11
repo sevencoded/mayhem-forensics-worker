@@ -1,27 +1,23 @@
+# app.py
 import os
 import traceback
 import threading
 import time
 import uuid
-from flask import Flask, request, jsonify
-from supabase import create_client
 
+from flask import Flask, request, jsonify
+
+from utils import supabase, upload_file
 from enf import extract_enf
 from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
 
-# ---------------------------------------------------------
-# SUPABASE INIT
-# ---------------------------------------------------------
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-app = Flask(__name__)
-
 # Shared persistent Render disk
 UPLOAD_DIR = "/data/files"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+app = Flask(__name__)
+
 
 # =========================================================
 # WORKER — PROCESSES 1 JOB AT A TIME (SAFE FOR 1000/day)
@@ -64,26 +60,24 @@ def process_pending_jobs():
                 audio_fp = extract_audio_fingerprint(video_path)
                 video_phash = extract_video_phash(video_path)
 
-                # Save ENF image
+                # Save ENF image (PNG) u isti bucket kao i video
                 enf_path = f"{user_id}/{proof_id}_enf.png"
-                supabase.storage.from_("main_videos").upload(
-                    enf_path,
-                    enf_png,
-                    {"content-type": "image/png"}
-                )
+                upload_file(enf_path, enf_png, "image/png")
 
-                # Save forensic results
-                supabase.table("forensic_results").insert({
-                    "proof_id": proof_id,
-                    "enf_hash": enf_hash,
-                    "audio_fingerprint": audio_fp,
-                    "video_phash": video_phash
-                }).execute()
+                # Save forensic results u bazu
+                supabase.table("forensic_results").insert(
+                    {
+                        "proof_id": proof_id,
+                        "enf_hash": enf_hash,
+                        "audio_fingerprint": audio_fp,
+                        "video_phash": video_phash,
+                    }
+                ).execute()
 
-                # Delete slice from disk
+                # Delete slice sa diska
                 try:
                     os.remove(video_path)
-                except:
+                except Exception:
                     pass
 
                 supabase.table("forensic_queue").update(
@@ -107,8 +101,9 @@ def process_pending_jobs():
         time.sleep(1)
 
 
-# Start worker thread
+# Start worker thread (ako se ovo vrti kao web servis)
 threading.Thread(target=process_pending_jobs, daemon=True).start()
+
 
 # =========================================================
 # UPLOAD ENDPOINT — INSTANT RESPONSE (FAST)
@@ -125,20 +120,26 @@ def upload():
         filepath = f"{UPLOAD_DIR}/{proof_id}.mp4"
         file.save(filepath)
 
-        supabase.table("proofs").insert({
-            "id": proof_id,
-            "user_id": user_id,
-            "name": name,
-            "hash": sha256,
-            "signature": sha256
-        }).execute()
+        # upis u proofs
+        supabase.table("proofs").insert(
+            {
+                "id": proof_id,
+                "user_id": user_id,
+                "name": name,
+                "hash": sha256,
+                "signature": sha256,
+            }
+        ).execute()
 
-        supabase.table("forensic_queue").insert({
-            "proof_id": proof_id,
-            "user_id": user_id,
-            "video_path": filepath,
-            "status": "pending"
-        }).execute()
+        # stavljanje u forenzički queue
+        supabase.table("forensic_queue").insert(
+            {
+                "proof_id": proof_id,
+                "user_id": user_id,
+                "video_path": filepath,
+                "status": "pending",
+            }
+        ).execute()
 
         return jsonify({"ok": True, "proof_id": proof_id})
 
@@ -153,4 +154,5 @@ def health():
 
 
 if __name__ == "__main__":
+    # Lokalno testiranje – na Renderu koristiš startCommand iz render.yaml
     app.run(host="0.0.0.0", port=10000)
