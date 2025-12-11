@@ -8,15 +8,17 @@ from audio_fp import extract_audio_fingerprint
 from phash import extract_video_phash
 
 def worker_loop():
-    print("WORKER STARTED")
+    print("WORKER STARTED (INSIDE WEB SERVICE)")
 
     while True:
         try:
-            job_res = supabase.table("forensic_queue")\
-                .select("*")\
-                .eq("status", "pending")\
-                .limit(1)\
+            job_res = (
+                supabase.table("forensic_queue")
+                .select("*")
+                .eq("status", "pending")
+                .limit(1)
                 .execute()
+            )
 
             if not job_res.data:
                 time.sleep(1)
@@ -54,7 +56,7 @@ def worker_loop():
                 }).eq("id", qid).execute()
 
             except Exception as e:
-                print("PROCESS ERROR:", e)
+                print("FORENSIC ERROR:", e)
                 traceback.print_exc()
                 supabase.table("forensic_queue").update({
                     "status": "failed"
@@ -65,6 +67,3 @@ def worker_loop():
             traceback.print_exc()
 
         time.sleep(1)
-
-if __name__ == "__main__":
-    worker_loop()
