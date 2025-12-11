@@ -1,10 +1,7 @@
-import os
+# app_web.py
 import uuid
 from flask import Flask, request, jsonify
 from utils import supabase
-
-UPLOAD_DIR = "/data/files"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
@@ -16,9 +13,8 @@ def upload():
         sha256 = request.form["sha256"]
         file = request.files["file"]
 
+        video_bytes = file.read()
         proof_id = str(uuid.uuid4())
-        filepath = f"{UPLOAD_DIR}/{proof_id}.mp4"
-        file.save(filepath)
 
         supabase.table("proofs").insert({
             "id": proof_id,
@@ -31,7 +27,7 @@ def upload():
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_path": filepath,
+            "video_data": video_bytes,   # BINARY video !!!
             "status": "pending"
         }).execute()
 
@@ -40,11 +36,6 @@ def upload():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/")
 def health():
-    return "WEB API OK", 200
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    return "WEB OK", 200
