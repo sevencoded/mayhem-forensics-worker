@@ -1,5 +1,7 @@
 # app_web.py
 import uuid
+import base64
+import os
 from flask import Flask, request, jsonify
 from utils import supabase
 
@@ -13,9 +15,15 @@ def upload():
         sha256 = request.form["sha256"]
         file = request.files["file"]
 
+        # Read slice bytes
         video_bytes = file.read()
+
+        # Encode to base64 so Supabase can store it safely in JSON
+        video_b64 = base64.b64encode(video_bytes).decode("utf-8")
+
         proof_id = str(uuid.uuid4())
 
+        # Insert into proofs table
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -24,16 +32,18 @@ def upload():
             "signature": sha256
         }).execute()
 
+        # Insert into forensic queue
         supabase.table("forensic_queue").insert({
             "proof_id": proof_id,
             "user_id": user_id,
-            "video_data": video_bytes,
+            "video_data": video_b64,
             "status": "pending"
         }).execute()
 
         return jsonify({"ok": True, "proof_id": proof_id}), 200
 
     except Exception as e:
+        print("UPLOAD ERROR:", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -42,6 +52,7 @@ def health():
     return "WEB OK", 200
 
 
-# ❗ Ovo je falilo — bez ovoga Render će se odmah ugasiti.
+# Render requires this to keep server open
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
