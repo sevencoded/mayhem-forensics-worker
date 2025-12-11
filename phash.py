@@ -1,22 +1,14 @@
-# phash.py
 import hashlib
-
 import cv2
-import numpy as np
 from PIL import Image
 import imagehash
 
-
 def extract_video_phash(path: str, num_frames: int = 5) -> str:
-    """
-    Izračunava robustan perceptual hash preko više kadrova videa.
-    """
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video file for pHash: {path}")
+        raise RuntimeError("Cannot open video")
 
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-
     if frame_count <= 0:
         frame_indices = [0]
     else:
@@ -33,14 +25,13 @@ def extract_video_phash(path: str, num_frames: int = 5) -> str:
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         pil_img = Image.fromarray(gray)
-        h = imagehash.phash(pil_img)  # 64-bit hash
-        hashes.append(int(str(h), 16))  # čuvamo kao int
+        h = imagehash.phash(pil_img)
+        hashes.append(int(str(h), 16))
 
     cap.release()
 
     if not hashes:
-        raise RuntimeError("Could not compute pHash – no frames readable")
+        raise RuntimeError("No valid frames for pHash")
 
-    # Kombinuj više frejm hash-eva u jedan SHA-256
-    buf = b"".join(h.to_bytes(8, "big", signed=False) for h in hashes)
+    buf = b"".join(h.to_bytes(8, "big") for h in hashes)
     return hashlib.sha256(buf).hexdigest()
