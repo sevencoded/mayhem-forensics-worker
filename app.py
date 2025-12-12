@@ -70,12 +70,21 @@ def upload():
         # ----------------------------
         enf_hash, enf_png = extract_enf(temp_path)
         audio_fp = extract_audio_fingerprint(temp_path)
+        # ----------------------------
+        # 3. FORENSIC PIPELINE
+        # ----------------------------
+      
+
+        # pHash je OPCIONI (best-effort)
         try:
-          video_phash = extract_video_phash(temp_path)
-           except Exception as e:
-              print("pHash skipped:", e)
-               video_phash = None
-        # 4. SAVE RESULTS
+            video_phash = extract_video_phash(temp_path)
+        except Exception as e:
+            print("pHash skipped:", e)
+            video_phash = None
+
+
+        
+        
         # ----------------------------
         supabase.table("proofs").insert({
             "id": proof_id,
