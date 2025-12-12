@@ -1,7 +1,6 @@
 import os
 import uuid
 import tempfile
-import traceback
 from flask import Flask, request, jsonify
 
 from utils import supabase, upload_file
@@ -12,9 +11,8 @@ from phash import extract_video_phash
 app = Flask(__name__)
 
 MAX_SLICE_SIZE = 10 * 1024 * 1024  # 10MB
-RETRY_AFTER = 5                   # seconds
+RETRY_AFTER = 5
 
-# 🔒 SINGLE SLOT
 ACTIVE_JOB = False
 
 
@@ -58,7 +56,7 @@ def upload():
         proof_id = str(uuid.uuid4())
 
         # ----------------------------
-        # 2. SAVE TEMP SLICE
+        # 2. SAVE TEMP FILE
         # ----------------------------
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             tmp.write(slice_bytes)
@@ -70,15 +68,15 @@ def upload():
         enf_hash, enf_png = extract_enf(temp_path)
         audio_fp = extract_audio_fingerprint(temp_path)
 
-        # pHash = OPTIONAL (NE SME DA RUŠI UPLOAD)
+        # pHash = OPTIONAL
         try:
             video_phash = extract_video_phash(temp_path)
         except Exception as e:
-            print("[INFO] pHash skipped:", repr(e))
+            print("pHash skipped:", e)
             video_phash = None
 
         # ----------------------------
-        # 4. SAVE RESULTS
+        # 4. SAVE TO SUPABASE
         # ----------------------------
         supabase.table("proofs").insert({
             "id": proof_id,
@@ -107,11 +105,9 @@ def upload():
         }), 200
 
     except Exception as e:
+        import traceback
         traceback.print_exc()
-        return jsonify({
-            "error": repr(e),
-            "type": type(e).__name__
-        }), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
         if temp_path and os.path.exists(temp_path):
