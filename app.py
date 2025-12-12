@@ -1,32 +1,60 @@
-import uuid
 import os
+import uuid
+import tempfile
 from flask import Flask, request, jsonify
-from utils import supabase
-from worker import worker_loop
-import threading
+
+from utils import supabase, upload_file
+from enf import extract_enf
+from audio_fp import extract_audio_fingerprint
+from phash import extract_video_phash
 
 app = Flask(__name__)
 
-UPLOAD_DIR = "/data/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+MAX_SLICE_SIZE = 10 * 1024 * 1024  # 10MB
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    temp_path = None
+
     try:
-        user_id = request.form["user_id"]
-        name = request.form["name"]
-        sha256 = request.form["sha256"]
-        file = request.files["file"]
+        # ----------------------------
+        # 1. VALIDATION
+        # ----------------------------
+        user_id = request.form.get("user_id")
+        name = request.form.get("name")
+        sha256 = request.form.get("sha256")
+        file = request.files.get("file")
+
+        if not all([user_id, name, sha256, file]):
+            return jsonify({"error": "Missing fields"}), 400
 
         slice_bytes = file.read()
+        if len(slice_bytes) > MAX_SLICE_SIZE:
+            return jsonify({"error": "Slice too large"}), 413
 
         proof_id = str(uuid.uuid4())
-        local_path = f"{UPLOAD_DIR}/{proof_id}.mp4"
 
-        # Save slice to disk
-        with open(local_path, "wb") as f:
-            f.write(slice_bytes)
+        # ----------------------------
+        # 2. SAVE TEMP VIDEO SLICE
+        # ----------------------------
+        with tempfile.NamedTemporaryFile(
+            suffix=".mp4",
+            delete=False
+        ) as tmp:
+            tmp.write(slice_bytes)
+            temp_path = tmp.name
 
+        # ----------------------------
+        # 3. FORENSIC PIPELINE
+        # ----------------------------
+        enf_hash, enf_png = extract_enf(temp_path)
+        audio_fp = extract_audio_fingerprint(temp_path)
+        video_phash = extract_video_phash(temp_path)
+
+        # ----------------------------
+        # 4. SAVE RESULTS (SUPABASE)
+        # ----------------------------
         supabase.table("proofs").insert({
             "id": proof_id,
             "user_id": user_id,
@@ -35,29 +63,43 @@ def upload():
             "signature": sha256
         }).execute()
 
-        supabase.table("forensic_queue").insert({
+        supabase.table("forensic_results").insert({
             "proof_id": proof_id,
-            "user_id": user_id,
-            "file_path": local_path,
-            "status": "pending"
+            "enf_hash": enf_hash,
+            "audio_fingerprint": audio_fp,
+            "video_phash": video_phash
         }).execute()
 
-        return jsonify({"ok": True, "proof_id": proof_id}), 200
+        upload_file(
+            f"{user_id}/{proof_id}_enf.png",
+            enf_png,
+            "image/png"
+        )
+
+        # ----------------------------
+        # 5. RESPONSE
+        # ----------------------------
+        return jsonify({
+            "ok": True,
+            "proof_id": proof_id
+        }), 200
 
     except Exception as e:
-        print("UPLOAD ERROR:", e)
         return jsonify({"error": str(e)}), 500
+
+    finally:
+        # ----------------------------
+        # 6. CLEANUP (CRITICAL)
+        # ----------------------------
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @app.route("/")
 def health():
-    return "WEB OK", 200
+    return "OK", 200
 
 
-# Run worker in the same container
 if __name__ == "__main__":
-    t = threading.Thread(target=worker_loop, daemon=True)
-    t.start()
-
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
