@@ -1,6 +1,7 @@
 import os
 import uuid
 import tempfile
+import time
 from flask import Flask, request, jsonify
 
 from utils import supabase, upload_file
@@ -11,13 +12,35 @@ from phash import extract_video_phash
 app = Flask(__name__)
 
 MAX_SLICE_SIZE = 10 * 1024 * 1024  # 10MB
+RETRY_AFTER = 5                   # seconds
+
+# 🔒 SINGLE SLOT
+ACTIVE_JOB = False
+
+
+@app.route("/capacity", methods=["GET"])
+def capacity():
+    return jsonify({
+        "busy": ACTIVE_JOB,
+        "retry_after": RETRY_AFTER
+    }), 200
 
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    global ACTIVE_JOB
     temp_path = None
 
+    # ❌ ako je server zauzet
+    if ACTIVE_JOB:
+        return jsonify({
+            "error": "Server busy",
+            "retry_after": RETRY_AFTER
+        }), 429
+
     try:
+        ACTIVE_JOB = True
+
         # ----------------------------
         # 1. VALIDATION
         # ----------------------------
@@ -36,12 +59,9 @@ def upload():
         proof_id = str(uuid.uuid4())
 
         # ----------------------------
-        # 2. SAVE TEMP VIDEO SLICE
+        # 2. SAVE TEMP SLICE
         # ----------------------------
-        with tempfile.NamedTemporaryFile(
-            suffix=".mp4",
-            delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
             tmp.write(slice_bytes)
             temp_path = tmp.name
 
@@ -53,7 +73,7 @@ def upload():
         video_phash = extract_video_phash(temp_path)
 
         # ----------------------------
-        # 4. SAVE RESULTS (SUPABASE)
+        # 4. SAVE RESULTS
         # ----------------------------
         supabase.table("proofs").insert({
             "id": proof_id,
@@ -76,9 +96,6 @@ def upload():
             "image/png"
         )
 
-        # ----------------------------
-        # 5. RESPONSE
-        # ----------------------------
         return jsonify({
             "ok": True,
             "proof_id": proof_id
@@ -89,10 +106,12 @@ def upload():
 
     finally:
         # ----------------------------
-        # 6. CLEANUP (CRITICAL)
+        # 5. CLEANUP
         # ----------------------------
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+        ACTIVE_JOB = False
 
 
 @app.route("/")
